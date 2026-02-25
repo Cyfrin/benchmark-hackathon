@@ -1,0 +1,8 @@
+{
+  "name": "battlechain-benchmark",
+  "private": true,
+  "scripts": {
+    "smoke-test": "./smoke-test.sh",
+    "smoke-test:ui": "./smoke-test.sh --keep-alive"
+  }
+}
