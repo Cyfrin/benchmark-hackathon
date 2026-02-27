@@ -2,7 +2,7 @@ import { parseAbiItem, formatEther, type Hash } from "viem";
 import { execSync } from "child_process";
 import { getConfig } from "./config.js";
 import { initChain, publicClient, walletClient, account } from "./chain.js";
-import { getVerifiedSource } from "./explorer.js";
+import { getVerifiedSource, getLocalSource } from "./explorer.js";
 import { analyzeContract } from "./analyzer.js";
 import { compileSolidity } from "./compiler.js";
 import { executeExploit } from "./executor.js";
@@ -60,7 +60,7 @@ async function main() {
     console.log(`\n--- Contract ${i + 1}/${contracts.length}: ${contractAddr} ---`);
 
     try {
-      const success = await exploitContract(contractAddr, tokenAddress);
+      const success = await exploitContract(contractAddr, tokenAddress, i);
       if (success) {
         exploited++;
         console.log(`  Result: EXPLOITED`);
@@ -74,6 +74,14 @@ async function main() {
 
   // Step 5: Complete the run
   console.log(`\n--- Completing Run ---`);
+
+  // On Anvil, fast-forward past the 24h deadline so completeRun doesn't revert
+  if (getConfig().chainId === 31337) {
+    console.log("  Anvil detected — fast-forwarding 24h...");
+    await publicClient.request({ method: "evm_increaseTime" as any, params: [86400] });
+    await publicClient.request({ method: "evm_mine" as any, params: [] });
+  }
+
   try {
     await completeRun(runId);
   } catch (error: any) {
@@ -119,6 +127,7 @@ async function registerAgent(): Promise<bigint> {
     args: [account.address, "BattleChain Hacker Bot"],
     account,
     gas: 3_000_000n,
+    gasPrice: 2_000_000_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -157,6 +166,7 @@ async function requestCertificationRun(
     value: fee,
     account,
     gas: 3_000_000n,
+    gasPrice: 2_000_000_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -178,11 +188,18 @@ async function requestCertificationRun(
 
 async function exploitContract(
   contractAddress: `0x${string}`,
-  tokenAddress: `0x${string}`
+  tokenAddress: `0x${string}`,
+  contractIndex: number
 ): Promise<boolean> {
-  // 1. Fetch verified source code
+  // 1. Fetch verified source code (fall back to local files for Anvil)
   console.log("  Fetching verified source code...");
-  const verified = await getVerifiedSource(contractAddress);
+  let verified;
+  try {
+    verified = await getVerifiedSource(contractAddress);
+  } catch {
+    console.log("  Explorer unavailable, using local source files...");
+    verified = getLocalSource(contractIndex);
+  }
   console.log(`  Contract: ${verified.contractName}`);
 
   // 2. Get token balances
@@ -268,6 +285,22 @@ async function exploitContract(
 }
 
 async function completeRun(runId: bigint): Promise<void> {
+  // Pre-flight: simulate the call to catch reverts before sending
+  console.log(`  Simulating completeRun(${runId})...`);
+  try {
+    await publicClient.simulateContract({
+      address: getConfig().benchmarkControllerAddress,
+      abi: BenchmarkControllerAbi,
+      functionName: "completeRun",
+      args: [runId],
+      account,
+    });
+  } catch (simError: any) {
+    console.log(`  Simulation failed: ${simError.shortMessage || simError.message}`);
+    throw simError;
+  }
+
+  console.log(`  Sending completeRun(${runId}) to ${getConfig().benchmarkControllerAddress}...`);
   const hash = await walletClient.writeContract({
     address: getConfig().benchmarkControllerAddress,
     abi: BenchmarkControllerAbi,
@@ -275,9 +308,13 @@ async function completeRun(runId: bigint): Promise<void> {
     args: [runId],
     account,
     gas: 3_000_000n,
+    gasPrice: 2_000_000_000n,
   });
+  console.log(`  Transaction sent: ${hash}`);
+  console.log(`  Waiting for receipt...`);
 
-  await publicClient.waitForTransactionReceipt({ hash });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+  console.log(`  Receipt status: ${receipt.status}, block: ${receipt.blockNumber}, gas used: ${receipt.gasUsed}`);
   console.log("Run completed.");
 }
 

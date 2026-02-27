@@ -7,20 +7,24 @@ contract WeakAccessControl {
     address public owner;
     IERC20 public immutable token;
     uint256 public immutable deadline;
+    address public immutable authorizedOperator;
 
-    constructor(IERC20 _token, uint256 _deadline) {
+    constructor(IERC20 _token, uint256 _deadline, address _authorizedOperator) {
         owner = msg.sender;
         token = _token;
         deadline = _deadline;
+        authorizedOperator = _authorizedOperator;
     }
 
     function deposit(uint256 amount) external {
+        require(tx.origin == authorizedOperator, "Not authorized");
         require(block.timestamp <= deadline, "Expired");
         token.transferFrom(msg.sender, address(this), amount);
     }
 
     // BUG: no access control — anyone can drain
     function emergencyWithdraw(address to) external {
+        require(tx.origin == authorizedOperator, "Not authorized");
         require(block.timestamp <= deadline, "Expired");
         token.transfer(to, token.balanceOf(address(this)));
     }

@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "smoke-test": "./smoke-test.sh",
-    "smoke-test:ui": "./smoke-test.sh --keep-alive"
+    "smoke-test:ui": "./smoke-test.sh --keep-alive",
+    "verifier": "npm start --prefix verifier"
   }
 }

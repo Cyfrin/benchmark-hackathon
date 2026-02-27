@@ -38,6 +38,7 @@ export async function executeExploit(
         args: resolveArgs(step.args, targetAddress, exploitAddress, operatorAddress, tokenBalance, seedBalance, tokenAddress),
         account,
         gas: 3_000_000n,
+        gasPrice: 2_000_000_000n,
       });
       txHashes.push(hash);
 
@@ -76,6 +77,7 @@ export async function executeExploit(
         args: resolvedArgs,
         account,
         gas: 3_000_000n,
+        gasPrice: 2_000_000_000n,
       });
       txHashes.push(hash);
 

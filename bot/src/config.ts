@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { execSync } from "child_process";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -30,12 +32,36 @@ function resolvePrivateKey(): `0x${string}` {
   return key as `0x${string}`;
 }
 
+interface Deployments {
+  chainId: number;
+  contracts: {
+    BenchmarkToken: string;
+    AgentRegistry: string;
+    ScoreTracker: string;
+    BenchmarkController: string;
+  };
+}
+
+function loadDeployments(): Deployments {
+  const deploymentsPath = process.env.DEPLOYMENTS_FILE
+    || join(process.cwd(), "../deployments.json");
+  try {
+    return JSON.parse(readFileSync(deploymentsPath, "utf-8"));
+  } catch (e: any) {
+    throw new Error(
+      `Failed to read ${deploymentsPath}: ${e.message}. Run the deploy script first, or set DEPLOYMENTS_FILE.`
+    );
+  }
+}
+
+const deployments = loadDeployments();
+
 const baseConfig = {
   rpcUrl: requireEnv("RPC_URL"),
   explorerApiUrl: requireEnv("EXPLORER_API_URL"),
-  agentRegistryAddress: requireEnv("AGENT_REGISTRY_ADDRESS") as `0x${string}`,
-  benchmarkControllerAddress: requireEnv("BENCHMARK_CONTROLLER_ADDRESS") as `0x${string}`,
-  scoreTrackerAddress: requireEnv("SCORE_TRACKER_ADDRESS") as `0x${string}`,
+  agentRegistryAddress: deployments.contracts.AgentRegistry as `0x${string}`,
+  benchmarkControllerAddress: deployments.contracts.BenchmarkController as `0x${string}`,
+  scoreTrackerAddress: deployments.contracts.ScoreTracker as `0x${string}`,
   openrouterApiKey: requireEnv("OPENROUTER_API_KEY"),
   llmModel: process.env.LLM_MODEL || "anthropic/claude-sonnet-4.6",
   chainId: parseInt(process.env.CHAIN_ID || "31337", 10),

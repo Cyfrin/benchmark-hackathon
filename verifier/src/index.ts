@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { createPublicClient, defineChain, http, parseAbiItem } from "viem";
 import { TEMPLATES, isVerified, verifyContract } from "./verify.js";
 import BenchmarkControllerAbi from "./abi/BenchmarkController.json" with { type: "json" };
@@ -15,14 +17,25 @@ interface Config {
 function loadConfig(): Config {
   const rpcUrl = process.env.RPC_URL;
   const explorerApiUrl = process.env.EXPLORER_API_URL;
-  const benchmarkControllerAddress = process.env.BENCHMARK_CONTROLLER_ADDRESS;
   const contractsDir = process.env.CONTRACTS_DIR || "../contracts";
   const chainId = parseInt(process.env.CHAIN_ID || "31337", 10);
   const pollIntervalMs = parseInt(process.env.POLL_INTERVAL_MS || "5000", 10);
 
   if (!rpcUrl) throw new Error("RPC_URL is required");
   if (!explorerApiUrl) throw new Error("EXPLORER_API_URL is required");
-  if (!benchmarkControllerAddress) throw new Error("BENCHMARK_CONTROLLER_ADDRESS is required");
+
+  // Read contract address from deployments.json
+  const deploymentsPath = process.env.DEPLOYMENTS_FILE
+    || join(process.cwd(), "../deployments.json");
+  let benchmarkControllerAddress: string;
+  try {
+    const deployments = JSON.parse(readFileSync(deploymentsPath, "utf-8"));
+    benchmarkControllerAddress = deployments.contracts.BenchmarkController;
+  } catch (e: any) {
+    throw new Error(
+      `Failed to read ${deploymentsPath}: ${e.message}. Run the deploy script first, or set DEPLOYMENTS_FILE.`
+    );
+  }
 
   return {
     rpcUrl,

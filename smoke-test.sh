@@ -66,7 +66,7 @@ echo ""
 # Step 3: Deploy contracts
 echo "--- Deploying contracts ---"
 cd "$CONTRACTS_DIR"
-DEPLOY_OUTPUT=$(DEPLOYER_ADDRESS="$DEPLOYER_ADDR" forge script script/Deploy.s.sol:Deploy \
+DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$RPC_URL" \
   --private-key "$DEPLOYER_KEY" \
   --broadcast 2>&1)
@@ -89,6 +89,20 @@ echo "BenchmarkToken:      $BENCHMARK_TOKEN"
 echo "AgentRegistry:       $AGENT_REGISTRY"
 echo "ScoreTracker:        $SCORE_TRACKER"
 echo "BenchmarkController: $BENCHMARK_CONTROLLER"
+
+# Write deployments.json for bot and verifier
+cat > "$ROOT_DIR/deployments.json" <<EOF
+{
+  "chainId": 31337,
+  "contracts": {
+    "BenchmarkToken": "$BENCHMARK_TOKEN",
+    "AgentRegistry": "$AGENT_REGISTRY",
+    "ScoreTracker": "$SCORE_TRACKER",
+    "BenchmarkController": "$BENCHMARK_CONTROLLER"
+  }
+}
+EOF
+echo "Wrote deployments.json"
 echo ""
 
 # Step 4: Start mock explorer
@@ -116,9 +130,6 @@ echo ""
 echo "--- Running bot ---"
 BOT_OUTPUT=$(RPC_URL="$RPC_URL" \
   EXPLORER_API_URL="$EXPLORER_URL" \
-  AGENT_REGISTRY_ADDRESS="$AGENT_REGISTRY" \
-  BENCHMARK_CONTROLLER_ADDRESS="$BENCHMARK_CONTROLLER" \
-  SCORE_TRACKER_ADDRESS="$SCORE_TRACKER" \
   PRIVATE_KEY="$BOT_KEY" \
   CHAIN_ID="31337" \
   npx tsx src/index.ts 2>&1) || true

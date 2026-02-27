@@ -14,11 +14,9 @@ contract Deploy is Script {
     uint256 constant CERTIFICATION_FEE = 0.01 ether;
 
     function run() external {
-        // Deployer address passed via env so we can predict nonces correctly.
-        // This must match the --account used with forge script.
-        address deployer = vm.envAddress("DEPLOYER_ADDRESS");
+        vm.startBroadcast();
 
-        vm.startBroadcast(deployer);
+        address deployer = msg.sender;
 
         // 1. Deploy BenchmarkToken
         BenchmarkToken token = new BenchmarkToken();

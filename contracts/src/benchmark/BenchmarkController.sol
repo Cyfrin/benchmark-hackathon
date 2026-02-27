@@ -74,8 +74,8 @@ contract BenchmarkController is Ownable {
         for (uint256 i = 0; i < templates.length; i++) {
             bytes32 salt = keccak256(abi.encode(runId, agentId, block.timestamp, block.prevrandao, i));
 
-            // Append constructor args: (IERC20 token, uint256 deadline)
-            bytes memory bytecode = abi.encodePacked(templates[i], abi.encode(address(benchmarkToken), deadline));
+            // Append constructor args: (IERC20 token, uint256 deadline, address authorizedOperator)
+            bytes memory bytecode = abi.encodePacked(templates[i], abi.encode(address(benchmarkToken), deadline, agent.operator));
 
             address instance;
             assembly {

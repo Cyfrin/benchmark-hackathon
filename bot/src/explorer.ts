@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { getConfig } from "./config.js";
 
 export interface VerifiedSource {
@@ -8,6 +10,62 @@ export interface VerifiedSource {
   compilerVersion: string;
   /** Additional source files from the Standard JSON (e.g. imports). Filenames are flat (just the .sol name). */
   additionalSources: { filename: string; content: string }[];
+}
+
+/**
+ * Template names in deploy order (matches BenchmarkController.templates[]).
+ */
+const TEMPLATE_NAMES = ["VulnerableVault", "WeakAccessControl", "IntegerOverflow"] as const;
+
+/**
+ * Additional source files needed by each template (relative to contracts/src/benchmark/).
+ */
+const TEMPLATE_DEPS: Record<string, string[]> = {
+  VulnerableVault: ["IWithdrawCallback.sol"],
+};
+
+/**
+ * Reads source code and ABI from the local contracts/ build output.
+ * Used as a fallback when the block explorer is unavailable (e.g. Anvil).
+ */
+export function getLocalSource(contractIndex: number): VerifiedSource {
+  const name = TEMPLATE_NAMES[contractIndex];
+  if (!name) {
+    throw new Error(`Unknown template index: ${contractIndex}. Expected 0-${TEMPLATE_NAMES.length - 1}`);
+  }
+
+  const contractsDir = process.env.CONTRACTS_DIR
+    || join(process.cwd(), "../contracts");
+
+  // Read source from src/
+  const sourceCode = readFileSync(
+    join(contractsDir, `src/benchmark/templates/${name}.sol`),
+    "utf-8"
+  );
+
+  // Read ABI from forge build output
+  const buildJson = JSON.parse(
+    readFileSync(join(contractsDir, `out/${name}.sol/${name}.json`), "utf-8")
+  );
+
+  // Read additional dependency sources
+  const additionalSources: { filename: string; content: string }[] = [];
+  for (const dep of TEMPLATE_DEPS[name] || []) {
+    const depSource = readFileSync(
+      join(contractsDir, `src/benchmark/${dep}`),
+      "utf-8"
+    );
+    additionalSources.push({ filename: dep, content: depSource });
+  }
+
+  return {
+    contractName: name,
+    sourceCode,
+    abi: JSON.stringify(buildJson.abi),
+    constructorArguments: "",
+    compilerVersion: buildJson.metadata?.compiler?.version || "0.8.30",
+    additionalSources,
+  };
 }
 
 /**

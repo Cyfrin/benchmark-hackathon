@@ -43,12 +43,21 @@ IMPORTANT RULES:
 - Do NOT reference any type, interface, or contract name without importing it first.
 - For direct call exploits (no contract deployment needed), just specify the function calls.
 
-REENTRANCY EXPLOIT TIPS:
-- For reentrancy, the deposit amount MUST equal TOKEN_BALANCE (the contract's existing balance), NOT SEED_BALANCE.
+REENTRANCY EXPLOIT PATTERN:
+- The exploit contract MUST handle everything internally: pull tokens from operator, approve+deposit into vault, call withdraw, and re-enter via callback.
+- The exploitSteps should be exactly: 1) deploy exploit contract, 2) operator approves TOKEN_BALANCE tokens to EXPLOIT, 3) call attack() on EXPLOIT.
+- Do NOT have the operator call deposit() directly on TARGET — the exploit contract must do it.
+- The deposit amount MUST equal TOKEN_BALANCE (the contract's existing balance), NOT SEED_BALANCE.
   This ensures that on each reentrant withdraw, the vault has exactly enough tokens to send.
   Example: if vault has 1 BENCH and you deposit 1 BENCH, vault has 2. First withdraw sends 1 (vault has 1 left), reentrant withdraw sends 1 (vault has 0). Both succeed.
   If you deposit more than TOKEN_BALANCE, the reentrant withdraw will revert (insufficient vault balance).
-- The exploit contract should transfer funds back to the operator at the end.
+- The exploit contract should transfer ALL drained funds back to the operator at the end.
+
+UNDERFLOW/OVERFLOW EXPLOIT PATTERN:
+- If the contract has an unchecked underflow in withdraw, you do NOT need to deposit first.
+- Just call withdraw() directly with the full contract token balance to drain it in one call.
+- Do NOT deposit tokens — that increases the contract balance and you'd need to withdraw more.
+- The exploit is simply: withdraw(TOKEN_BALANCE) on TARGET. One step, no contract deployment needed.
 
 STEP ORDERING:
 - deploy_contract steps MUST come before any call_function steps that reference "EXPLOIT".

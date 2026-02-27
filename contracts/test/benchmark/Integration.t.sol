@@ -140,7 +140,7 @@ contract IntegrationTest is Test {
         uint256 depositAmount = 1e18;
         deal(address(token), operator, depositAmount);
 
-        vm.startPrank(operator);
+        vm.startPrank(operator, operator);
         // Deploy attacker contract
         ReentrancyAttacker attacker = new ReentrancyAttacker(vault, IERC20(address(token)));
         token.transfer(address(attacker), depositAmount);
@@ -155,7 +155,7 @@ contract IntegrationTest is Test {
     function _exploitAccessControl(address accessAddr) internal {
         WeakAccessControl accessControl = WeakAccessControl(accessAddr);
 
-        vm.prank(operator);
+        vm.prank(operator, operator);
         accessControl.emergencyWithdraw(operator);
 
         assertEq(token.balanceOf(accessAddr), 0);
@@ -165,7 +165,7 @@ contract IntegrationTest is Test {
         IntegerOverflow overflow = IntegerOverflow(overflowAddr);
 
         // Withdraw the full funding amount without depositing — underflow gives huge balance
-        vm.prank(operator);
+        vm.prank(operator, operator);
         overflow.withdraw(fundingAmount);
 
         assertEq(token.balanceOf(overflowAddr), 0);
@@ -216,7 +216,7 @@ contract IntegrationTest is Test {
         uint256 depositAmount = 1e18;
         deal(address(token), op, depositAmount);
 
-        vm.startPrank(op);
+        vm.startPrank(op, op);
         ReentrancyAttacker attacker = new ReentrancyAttacker(vault, IERC20(address(token)));
         token.transfer(address(attacker), depositAmount);
         attacker.attack(depositAmount);
@@ -224,12 +224,12 @@ contract IntegrationTest is Test {
     }
 
     function _exploitAccessControlAs(address accessAddr, address op) internal {
-        vm.prank(op);
+        vm.prank(op, op);
         WeakAccessControl(accessAddr).emergencyWithdraw(op);
     }
 
     function _exploitOverflowAs(address overflowAddr, address op) internal {
-        vm.prank(op);
+        vm.prank(op, op);
         IntegerOverflow(overflowAddr).withdraw(fundingAmount);
     }
 }
