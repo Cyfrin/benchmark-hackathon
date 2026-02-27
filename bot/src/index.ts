@@ -1,6 +1,7 @@
 import { parseAbiItem, formatEther, type Hash } from "viem";
-import { config } from "./config.js";
-import { publicClient, walletClient, account } from "./chain.js";
+import { execSync } from "child_process";
+import { getConfig } from "./config.js";
+import { initChain, publicClient, walletClient, account } from "./chain.js";
 import { getVerifiedSource } from "./explorer.js";
 import { analyzeContract } from "./analyzer.js";
 import { compileSolidity } from "./compiler.js";
@@ -13,22 +14,41 @@ import BenchmarkTokenAbi from "./abi/BenchmarkToken.json" with { type: "json" };
 import ScoreTrackerAbi from "./abi/ScoreTracker.json" with { type: "json" };
 
 async function main() {
+  await initChain();
+
   console.log("=== BattleChain Hacker Bot ===\n");
   console.log(`Operator: ${account.address}`);
-  console.log(`RPC: ${config.rpcUrl}\n`);
+  console.log(`RPC: ${getConfig().rpcUrl}\n`);
 
   // Step 1: Register agent (skip if already registered)
   const agentId = await registerAgent();
   console.log(`Agent ID: ${agentId}\n`);
 
-  // Step 2: Request certification run
-  const { runId, contracts } = await requestCertificationRun(agentId);
+  // Step 2: Use existing run or request a new one
+  let runId: bigint;
+  let contracts: string[];
+
+  const existingRunId = process.env.RUN_ID;
+  if (existingRunId) {
+    runId = BigInt(existingRunId);
+    console.log(`Resuming existing run ${runId}...`);
+    const run = await publicClient.readContract({
+      address: getConfig().benchmarkControllerAddress,
+      abi: BenchmarkControllerAbi,
+      functionName: "getRun",
+      args: [runId],
+    }) as any;
+    contracts = run.deployedContracts;
+  } else {
+    ({ runId, contracts } = await requestCertificationRun(agentId));
+  }
+
   console.log(`Run ID: ${runId}`);
   console.log(`Deployed contracts: ${contracts.length}\n`);
 
   // Step 3: Get token info
   const tokenAddress = await publicClient.readContract({
-    address: config.benchmarkControllerAddress,
+    address: getConfig().benchmarkControllerAddress,
     abi: BenchmarkControllerAbi,
     functionName: "benchmarkToken",
   }) as `0x${string}`;
@@ -62,7 +82,7 @@ async function main() {
 
   // Step 6: Check scores
   const stats = await publicClient.readContract({
-    address: config.scoreTrackerAddress,
+    address: getConfig().scoreTrackerAddress,
     abi: ScoreTrackerAbi,
     functionName: "getAgentStats",
     args: [BigInt(agentId)],
@@ -80,7 +100,7 @@ async function registerAgent(): Promise<bigint> {
   // Check if already registered
   try {
     const agent = await publicClient.readContract({
-      address: config.agentRegistryAddress,
+      address: getConfig().agentRegistryAddress,
       abi: AgentRegistryAbi,
       functionName: "getAgentByOperator",
       args: [account.address],
@@ -93,11 +113,12 @@ async function registerAgent(): Promise<bigint> {
 
   console.log("Registering agent...");
   const hash = await walletClient.writeContract({
-    address: config.agentRegistryAddress,
+    address: getConfig().agentRegistryAddress,
     abi: AgentRegistryAbi,
     functionName: "registerAgent",
     args: [account.address, "BattleChain Hacker Bot"],
     account,
+    gas: 3_000_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -107,7 +128,7 @@ async function registerAgent(): Promise<bigint> {
     "event AgentRegistered(uint256 indexed agentId, address indexed owner, address indexed operator)"
   );
   const logs = await publicClient.getContractEvents({
-    address: config.agentRegistryAddress,
+    address: getConfig().agentRegistryAddress,
     abi: [event],
     fromBlock: receipt.blockNumber,
     toBlock: receipt.blockNumber,
@@ -123,18 +144,19 @@ async function requestCertificationRun(
 
   // Get certification fee
   const fee = await publicClient.readContract({
-    address: config.benchmarkControllerAddress,
+    address: getConfig().benchmarkControllerAddress,
     abi: BenchmarkControllerAbi,
     functionName: "certificationFee",
   }) as bigint;
 
   const hash = await walletClient.writeContract({
-    address: config.benchmarkControllerAddress,
+    address: getConfig().benchmarkControllerAddress,
     abi: BenchmarkControllerAbi,
     functionName: "requestCertificationRun",
     args: [agentId],
     value: fee,
     account,
+    gas: 3_000_000n,
   });
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -144,7 +166,7 @@ async function requestCertificationRun(
     "event CertificationStarted(uint256 indexed runId, uint256 indexed agentId, address[] deployedContracts)"
   );
   const logs = await publicClient.getContractEvents({
-    address: config.benchmarkControllerAddress,
+    address: getConfig().benchmarkControllerAddress,
     abi: [event],
     fromBlock: receipt.blockNumber,
     toBlock: receipt.blockNumber,
@@ -187,7 +209,7 @@ async function exploitContract(
   }
 
   // 3. Analyze with Claude
-  console.log("  Analyzing with Claude...");
+  console.log("  Analyzing with LLM...");
   const plan = await analyzeContract(
     verified.sourceCode,
     verified.contractName,
@@ -197,6 +219,10 @@ async function exploitContract(
   );
   console.log(`  Vulnerability: ${plan.vulnerability}`);
   console.log(`  Description: ${plan.description}`);
+  for (let si = 0; si < plan.exploitSteps.length; si++) {
+    const s = plan.exploitSteps[si];
+    console.log(`  Plan step ${si + 1}: [${s.type}] ${s.target || "N/A"}.${s.functionName}(${s.args?.join(", ") || ""}) — ${s.description}`);
+  }
 
   // 4. Compile exploit contract if needed
   let compiled = null;
@@ -205,10 +231,12 @@ async function exploitContract(
     // Extract contract name from source
     const nameMatch = plan.exploitContract.match(/contract\s+(\w+)/);
     const exploitName = nameMatch ? nameMatch[1] : "Exploit";
-    // Include the target contract source so exploit can import it by name
-    compiled = compileSolidity(plan.exploitContract, exploitName, [
+    // Include the target contract source + any additional imported files
+    const extraSources = [
       { filename: `${verified.contractName}.sol`, content: verified.sourceCode },
-    ]);
+      ...verified.additionalSources,
+    ];
+    compiled = compileSolidity(plan.exploitContract, exploitName, extraSources);
     console.log(`  Compiled: ${exploitName}`);
   }
 
@@ -241,11 +269,12 @@ async function exploitContract(
 
 async function completeRun(runId: bigint): Promise<void> {
   const hash = await walletClient.writeContract({
-    address: config.benchmarkControllerAddress,
+    address: getConfig().benchmarkControllerAddress,
     abi: BenchmarkControllerAbi,
     functionName: "completeRun",
     args: [runId],
     account,
+    gas: 3_000_000n,
   });
 
   await publicClient.waitForTransactionReceipt({ hash });

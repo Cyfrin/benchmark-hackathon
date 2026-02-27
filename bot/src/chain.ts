@@ -4,33 +4,42 @@ import {
   http,
   defineChain,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { config } from "./config.js";
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
+import { loadConfig } from "./config.js";
 
-export const battlechain = defineChain({
-  id: config.chainId,
-  name: "BattleChain Testnet",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: {
-    default: { http: [config.rpcUrl] },
-  },
-  blockExplorers: {
-    default: {
-      name: "BattleChain Explorer",
-      url: config.explorerApiUrl.replace("/api", ""),
+export let account: PrivateKeyAccount;
+export let publicClient: ReturnType<typeof createPublicClient>;
+export let walletClient: ReturnType<typeof createWalletClient>;
+export let battlechain: ReturnType<typeof defineChain>;
+
+export function initChain(): void {
+  const config = loadConfig();
+
+  battlechain = defineChain({
+    id: config.chainId,
+    name: "BattleChain Testnet",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: {
+      default: { http: [config.rpcUrl] },
     },
-  },
-});
+    blockExplorers: {
+      default: {
+        name: "BattleChain Explorer",
+        url: config.explorerApiUrl.replace("/api", ""),
+      },
+    },
+  });
 
-export const account = privateKeyToAccount(config.privateKey);
+  account = privateKeyToAccount(config.privateKey);
 
-export const publicClient = createPublicClient({
-  chain: battlechain,
-  transport: http(config.rpcUrl),
-});
+  publicClient = createPublicClient({
+    chain: battlechain,
+    transport: http(config.rpcUrl),
+  });
 
-export const walletClient = createWalletClient({
-  account,
-  chain: battlechain,
-  transport: http(config.rpcUrl),
-});
+  walletClient = createWalletClient({
+    account,
+    chain: battlechain,
+    transport: http(config.rpcUrl),
+  });
+}

@@ -37,6 +37,7 @@ export async function executeExploit(
         bytecode: compiled.bytecode,
         args: resolveArgs(step.args, targetAddress, exploitAddress, operatorAddress, tokenBalance, seedBalance, tokenAddress),
         account,
+        gas: 3_000_000n,
       });
       txHashes.push(hash);
 
@@ -74,11 +75,16 @@ export async function executeExploit(
         functionName: step.functionName,
         args: resolvedArgs,
         account,
+        gas: 3_000_000n,
       });
       txHashes.push(hash);
 
-      await publicClient.waitForTransactionReceipt({ hash });
-      console.log(`  Called ${step.functionName} on ${target}`);
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status === "reverted") {
+        console.log(`  REVERTED: ${step.functionName} on ${target} (tx: ${hash})`);
+      } else {
+        console.log(`  Called ${step.functionName} on ${target}`);
+      }
     }
   }
 
